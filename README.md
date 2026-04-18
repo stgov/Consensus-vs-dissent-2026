@@ -96,7 +96,7 @@ max_seq_length: 1275 (calculated based on max length of samples)
 ```
 
 
-### Llama
+### Olmo3
 
 Llama was fine-tuned using Supervised fine-tuning (SFT) with the transformers python package for four epochs. Data was split 80/20 training/test. The test set was used for evaluation during fine-tuning. Below is the training and evaluation loss.
 
