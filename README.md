@@ -11,7 +11,9 @@ config_gen: functions to generate group configurations (uniform, divergent, coal
 
 basemodels: generate LLM-as-judge assessments using base models (using either Cerebras or Ollama) -> but easily adjustable for use with e.g. Huggingface
 
+train_v3_3.jsonl: augmented training data used for fine-tuning
 
+test_v5_2.jsonl: test data for fine-tuning
 
 
 ## LLM-as-judge prompts
