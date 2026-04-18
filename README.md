@@ -1,6 +1,8 @@
 # Consensus-vs-dissent-2026
 Repository for the paper: Consensus vs. Dissent: Dynamic LLM Modeling of Subjective Preferences in Group Recommenders
 
+Pre-registration of user evaluation: https://osf.io/98kuw/overview?view_only=41c006b50fb84f0abb76347c98e94ff9
+
 
 
 ## Content:
