@@ -19,6 +19,10 @@ test_v5_2.jsonl: test data for fine-tuning
 
 training_augment.py: script for generating reasoning alongside the human ground truth scores. Created train_v5_3.jsonl
 
+finetune.py: code used for finetuning 
+
+user_study_LLM_assessments: all LLM-generated assessments for the 16 groups used in the user study. For more information on the user study, we refer to the pre-registration on OSF.
+
 
 ## LLM-as-judge prompts
 
