@@ -9,7 +9,7 @@ This repository provides the data, source code, and training pipelines for analy
 
 ## Resources
 *   **[OSF Pre-registration](https://osf.io/98kuw/overview?view_only=41c006b50fb84f0abb76347c98e94ff9)**: Detailed documentation of the user evaluation study.
-
+*   **[Original Dataset](https://dataverse.nl/dataset.xhtml?persistentId=doi:10.34894/8EVX4U)**: Dataset from previous work used in this study (before data augmentation)
 ---
 
 ## Project Structure
@@ -18,10 +18,10 @@ This repository provides the data, source code, and training pipelines for analy
 | :--- | :--- |
 | `strats` | Implementation of social choice-based aggregation strategies. |
 | `config_gen` | Script to generate group configurations (Uniform, Divergent, Coalitional, Minority). |
-| `basemodels/` | LLM-as-a-judge pipelines (compatible with Cerebras, Ollama, and Huggingface). |
+| `basemodels` | LLM-as-a-judge pipelines (compatible with Cerebras, Ollama, and Huggingface). |
 | `finetune.py` | Core training script for supervised fine-tuning (SFT). |
 | `training_augment.py` | Generates chain-of-thought reasoning alongside ground truth human scores. |
-| `user_study_LLM_assessments/` | Raw LLM assessments for the 16 scenarios used in our user study. |
+| `user_study_LLM_assessments` | Raw LLM assessments for the 16 scenarios used in our user study. |
 
 **Datasets:**
 *   `train_v5_3.jsonl`: Augmented training data used for fine-tuning.
