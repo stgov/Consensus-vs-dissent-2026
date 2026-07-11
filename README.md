@@ -1,131 +1,75 @@
-# Consensus-vs-dissent-2026
-Repository for the paper: Consensus vs. Dissent: Dynamic LLM Modeling of Subjective Preferences in Group Recommenders
+# Consensus vs. Dissent (2026)
 
-Pre-registration of user evaluation: https://osf.io/98kuw/overview?view_only=41c006b50fb84f0abb76347c98e94ff9
+**Repository for the paper:** *Consensus vs. Dissent: Dynamic LLM Modeling of Subjective Preferences in Group Recommenders*
+Accepted at **ACM RecSys 2026**
 
+This repository provides the data, source code, and training pipelines for analyzing how Large Language Models (LLMs) model subjective preferences in group recommender scenarios.
 
+---
 
-## Content:
+## Resources
+*   **[OSF Pre-registration](https://osf.io/98kuw/overview?view_only=41c006b50fb84f0abb76347c98e94ff9)**: Detailed documentation of the user evaluation study.
 
-strats: functions to calculate social choice-based aggregation strategies 
+---
 
-config_gen: functions to generate group configurations (uniform, divergent, coalitional, minority)
+## Project Structure
 
-basemodels: generate LLM-as-judge assessments using base models (using either Cerebras or Ollama) -> but easily adjustable for use with e.g. Huggingface
+| Component | Description |
+| :--- | :--- |
+| `strats` | Implementation of social choice-based aggregation strategies. |
+| `config_gen` | Script to generate group configurations (Uniform, Divergent, Coalitional, Minority). |
+| `basemodels/` | LLM-as-a-judge pipelines (compatible with Cerebras, Ollama, and Huggingface). |
+| `finetune.py` | Core training script for supervised fine-tuning (SFT). |
+| `training_augment.py` | Generates chain-of-thought reasoning alongside ground truth human scores. |
+| `user_study_LLM_assessments/` | Raw LLM assessments for the 16 scenarios used in our user study. |
 
-train_v5_3.jsonl: augmented training data used for fine-tuning
+**Datasets:**
+*   `train_v5_3.jsonl`: Augmented training data used for fine-tuning.
+*   `test_v5_2.jsonl`: Held-out test set for model evaluation.
 
-test_v5_2.jsonl: test data for fine-tuning
+---
 
-training_augment.py: script for generating reasoning alongside the human ground truth scores. Created train_v5_3.jsonl
+## LLM-as-a-Judge Pipeline
 
-finetune.py: code used for finetuning 
+We utilize a structured prompt-based approach to elicit fairness assessments on a 7-point Likert scale.
 
-user_study_LLM_assessments: all LLM-generated assessments for the 16 groups used in the user study. For more information on the user study, we refer to the pre-registration on OSF.
+> **System Message**
+> You are a participant in a scientific study. You will be presented with scenarios regarding group restaurant recommendations. Answer using a 7-point Likert scale (-3: strongly disagree, 0: neutral, 3: strongly agree). Return **ONLY** a valid JSON object: `{"fairness": <int>}`.
 
+*(See repository source for the full scenario prompt template, which includes the restaurant rating matrix, constraint history, and the system recommendation.)*
 
-## LLM-as-judge prompts
+---
 
-```
-system_message = {
-        'role': 'system',
-        'content': """
-        You are a participant in a scientific study. 
-        You will be presented with four scenarios related to four different groups of people. 
-        For each of them, a software system will produce recommendations on the basis of the preferences of the group members. 
-        Please read carefully the description of each scenario, and then answer the question. 
+## Fine-tuning Methodology
 
-        The statements are to be answered using a 7-point Likert scale:
-        -3: strongly disagree
-        -2: disagree
-        -1: somehwat disagree
-        0: neither agree, neither disagree
-        1: somewhat agree
-        2: agree
-        3: strongly agree
+We performed Supervised Fine-Tuning (SFT) using `transformers` over 4 epochs (80/20 train-test split). We employed a custom masking function (`create_weighted_labels`) to ensure loss calculation is restricted to the model's output tokens.
 
-        You are to return ONLY a valid JSON object, with no explanations or extra text. 
-        Do not include markdown formatting (no ```json). 
-        The JSON must have the following structure:
-        {{
-        "fairness": your reply,
-        }}
-                """
-                }
-```
+### Model Hyperparameters
 
-```
-scenario = {
-        'role': 'user',
-        'content': f"""
-        Assume that there is a group of friends. Every month, a group decision is made by these friends to decide on a restaurant to have dinner together. 
-        To select a restaurant for the dinner next month, the group again has to take the same decision. 
-        In this decision, each group member explicitly rated ten possible restaurants using a 5-star rating scale (1: the worst, 5: the best). 
-        The ratings given by group members are shown in the table below:
+| Model | Learning Rate | LoRA Rank | LoRA Alpha |
+| :--- | :--- | :--- | :--- |
+| **Llama** | $1e-4$ | 16 | 32 |
+| **Olmo3** | $2e-5$ | 16 | 32 |
 
-        ### BEGIN TABLE ###
-        {result}
-        ### END TABLE ###
+*   **Shared Parameters:** `lora_dropout: 0.1` | `grad_accum: 4` | `max_seq_length: 1275`
 
-        The group decided to avoid going in the same restaurant too often; hence, after a restaurant has been selected, it cannot be chosen again for the next 4 dinners. 
-        **The last 3 restaurants visited are: {already_visited} **.
-        Using the provided ratings, the system made a suggestion for the group on the basis of the preferences of the all the group members.
-        **{recommendation}** has been recommended to the group {explanation}.
-
-        Indicate your agreement to the following statements (7-point likert scale ranging from -3 to 3):
-
-        ** Fairness **
-        The group recommendation is fair to all group members.
-
-
-        Reply only with the json object which includes your reply (integer 7-point likert scale -3 to 3). 
-        """
-
-    }
-```
-
-## Fine-tuning Documentation
-
-### Llama
-
-Llama was fine-tuned using Supervised fine-tuning (SFT) with the transformers python package for four epochs. Data was split 80/20 training/test. The test set was used for evaluation during fine-tuning. Below is the training and evaluation loss.
-
+#### Training Metrics
 ![Llama-loss](Llama-training-loss.png)
-
-#### Parameters:
-```
-lr:  1e-4
-lora_alpha:32
-lora_dropout:0.1
-lora_rank:16
-epochs: 4
-per_device_eval_batch_size:2
-per_device_train_batch_size:4
-grad_accum: 4
-max_seq_length: 1275 (calculated based on max length of samples)
-```
-
-
-### Olmo3
-
-Llama was fine-tuned using Supervised fine-tuning (SFT) with the transformers python package for four epochs. Data was split 80/20 training/test. The test set was used for evaluation during fine-tuning. Below is the training and evaluation loss.
+*Figure 1: Llama Fine-tuning loss trajectory.*
 
 ![Olmo-loss](OLMO_loss.png)
+*Figure 2: Olmo3 Fine-tuning loss trajectory.*
 
-#### Parameters:
-```
-lr:  2e-5
-lora_alpha:32
-lora_dropout:0.1
-lora_rank:16
-epochs: 4
-per_device_eval_batch_size:2
-per_device_train_batch_size:4
-grad_accum: 4
-max_seq_length: 1275 (calculated based on max length of samples)
-```
+---
 
-Custom masking function (create_weighted_labels(input_ids, tokenizer, model_name)) to only calculate loss on assistant message, which was validated before running. Function created to also parse Olmo and Qwen tokenizers
-e.g.,
+## Citation
+If you find this work useful, please consider citing our paper:
 
-Unmasked: 271 of a total of 1086 tokens
+full citation TBA
+
+```bibtex
+@inproceedings{waterschoot2026consensus,
+  title={Consensus vs. Dissent: Dynamic LLM Modeling of Subjective Preferences in Group Recommenders},
+  author={Waterschoot, Cedric and Tintarev, Nava and Barile, Francesco},
+  year={2026}
+}
