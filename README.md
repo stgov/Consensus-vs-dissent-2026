@@ -68,8 +68,18 @@ If you find this work useful, please consider citing our paper:
 full citation TBA
 
 ```bibtex
-@inproceedings{waterschoot2026consensus,
-  title={Consensus vs. Dissent: Dynamic LLM Modeling of Subjective Preferences in Group Recommenders},
-  author={Waterschoot, Cedric and Tintarev, Nava and Barile, Francesco},
-  year={2026}
+@inproceedings{10.1145/3773078.3831775,
+author = {Waterschoot, Cedric and Tintarev, Nava and Barile, Francesco},
+title = {Consensus vs. Dissent: Dynamic LLM Modeling of Subjective Preferences in Group Recommenders},
+year = {2026},
+isbn = {9798400722844},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3773078.3831775},
+doi = {10.1145/3773078.3831775},
+booktitle = {Proceedings of the 20th ACM Conference on Recommender Systems},
+pages = {135–144},
+numpages = {10},
+keywords = {Large Language Models, Fairness, Group Recommender Systems, LLM-as-judge, User study},
+series = {RecSys '26}
 }
