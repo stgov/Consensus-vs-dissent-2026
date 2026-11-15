@@ -1,4 +1,5 @@
 import os
+import math
 import torch
 import re
 import json
@@ -12,44 +13,69 @@ from transformers import (
     Trainer
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from trl import SFTTrainer, SFTConfig
 from huggingface_hub import login
-from sklearn.metrics import mean_absolute_error
-from statistics import mean
 from transformers import DataCollatorForSeq2Seq
 
+# ---------------------------------------------------------------------------
+# Colab setup (run these in notebook cells BEFORE this script):
+#   !pip install -q -U transformers peft trl datasets bitsandbytes accelerate
+#   from google.colab import drive; drive.mount('/content/drive')
+#   Upload train_v5_3.jsonl and test_v5_2.jsonl to /content/ (or set the
+#   env vars TRAIN_PATH / TEST_PATH).
+#   Hugging Face token: add it as Colab secret "HF_TOKEN" (needed for Llama,
+#   which is gated), or set the HF_TOKEN env var.
+# ---------------------------------------------------------------------------
 
+_hf_token = os.environ.get("HF_TOKEN")
+if _hf_token is None:
+    try:
+        from google.colab import userdata
+        _hf_token = userdata.get("HF_TOKEN")
+    except Exception:
+        _hf_token = None
+if _hf_token:
+    login(token=_hf_token)
 
+LOCAL_TRAIN_PATH = os.environ.get("TRAIN_PATH", "/content/train_v5_3.jsonl")
+LOCAL_TEST_PATH = os.environ.get("TEST_PATH", "/content/test_v5_2.jsonl")
 
-login(token="")
-
-LOCAL_TRAIN_PATH = "/content/train_v5_3.jsonl"
-LOCAL_TEST_PATH = "/content/test_v5_2.jsonl"
-
-
-!cp "" "$LOCAL_TRAIN_PATH"
-!cp "" "$LOCAL_TEST_PATH"
+# Choose the model with MODEL=llama or MODEL=olmo (default: olmo).
+# Paper (Sec. 3.1.3): Llama-3.1-8B-Instruct and OLMo-3-7B-Instruct-SFT,
+# both with lr 1e-4, LoRA r=16 / alpha=32, 4 epochs, batch 2 x grad accum 4.
+# NOTE: the original script used Olmo-3-7B-Think-SFT and the README says
+# lr 2e-5 for Olmo; the paper text says Instruct-SFT and 1e-4 for both.
+_MODELS = {
+    "llama": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    "olmo": "allenai/Olmo-3-7B-Instruct-SFT",
+}
+_MODEL_KEY = os.environ.get("MODEL", "olmo").lower()
+# Overrides, e.g. LEARNING_RATE=2e-5 to follow the README instead of the paper.
+_LR = float(os.environ.get("LEARNING_RATE", "1e-4"))
+# Saving to Drive keeps checkpoints if Colab disconnects.
+# SMOKE=1: quick end-to-end check (64 train / 16 test examples, 20 optimizer steps).
+# Not meant to produce a useful model; it only verifies the pipeline runs.
+_SMOKE = os.environ.get("SMOKE", "0") == "1"
+_OUT = os.environ.get(
+    "OUTPUT_DIR",
+    f"/content/drive/MyDrive/judgmental_{_MODEL_KEY}" + ("_smoke" if _SMOKE else ""),
+)
 
 
 @dataclass
 class FineTuneConfig:
 
-    #model_name: str = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-    model_name: str = "allenai/Olmo-3-7B-Think-SFT"
+    model_name: str = _MODELS[_MODEL_KEY]
 
-
-
-    train_path: str =  LOCAL_TRAIN_PATH
+    train_path: str = LOCAL_TRAIN_PATH
     test_path: str = LOCAL_TEST_PATH
 
+    output_dir: str = _OUT
 
-    output_dir: str = ""
-
-
-    num_train_epochs: int = 4
+    num_train_epochs: int = 1 if _SMOKE else 4
+    max_steps: int = 20 if _SMOKE else -1   # -1 = train for all epochs
     batch_size: int = 2
     grad_accum_steps: int = 4
-    learning_rate: float = 1e-4
+    learning_rate: float = _LR
     max_seq_length: int = 1275
 
 
@@ -57,9 +83,9 @@ class FineTuneConfig:
     lora_alpha: int = 32
     lora_dropout: float = 0.1
 
-    logging_steps: int = 50
-    save_steps: int = 100
-    eval_steps: int = 100
+    logging_steps: int = 5 if _SMOKE else 50
+    save_steps: int = 10 if _SMOKE else 100
+    eval_steps: int = 10 if _SMOKE else 100
 
 
 
@@ -252,6 +278,11 @@ def load_and_prepare_data(config):
         }
     )
 
+    if _SMOKE:
+        data["train"] = data["train"].select(range(min(64, len(data["train"]))))
+        data["test"] = data["test"].select(range(min(16, len(data["test"]))))
+        print("*** SMOKE MODE: 64 train / 16 test examples, max 20 steps ***")
+
     print(f"Train examples: {len(data['train'])}")
     print(f"Test examples: {len(data['test'])}")
     print(f"\nSample train example:")
@@ -363,6 +394,15 @@ def train_model(config):
     print("CONFIGURING TRAINING")
     print("="*80)
 
+    # `warmup_ratio` was removed in transformers 5.x, so compute warmup steps explicitly
+    # (10% of total steps, same as the original warmup_ratio=0.1; works on any version).
+    _steps_per_epoch = math.ceil(len(data["train"]) / (config.batch_size * config.grad_accum_steps))
+    _total_steps = config.max_steps if config.max_steps > 0 else _steps_per_epoch * config.num_train_epochs
+    _warmup_steps = max(1, int(0.1 * _total_steps))
+    # bf16 needs an Ampere+ GPU (A100/L4); fall back to fp16 on a T4.
+    _use_bf16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8
+    print(f"Total optimizer steps: {_total_steps} | warmup: {_warmup_steps} | precision: {'bf16' if _use_bf16 else 'fp16'}")
+
     training_args = TrainingArguments(
         output_dir=config.output_dir,
 
@@ -373,9 +413,10 @@ def train_model(config):
         #eval_accumulation_steps=1,
 
         num_train_epochs=config.num_train_epochs,
+        max_steps=config.max_steps,
         learning_rate=config.learning_rate,
         lr_scheduler_type="cosine",
-        warmup_ratio=0.1,
+        warmup_steps=_warmup_steps,
 
 
         optim="paged_adamw_8bit",
@@ -384,8 +425,8 @@ def train_model(config):
         gradient_checkpointing=True,
 
 
-        fp16=False,
-        bf16=True,
+        fp16=not _use_bf16,
+        bf16=_use_bf16,
 
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
@@ -397,7 +438,7 @@ def train_model(config):
         metric_for_best_model="eval_loss",
         greater_is_better=False,
         #packing=False,
-        report_to="wandb",
+        report_to="none",  # set to "wandb" if you have logged in
         remove_unused_columns=False,
 
     )
@@ -508,7 +549,16 @@ def train_model(config):
     print("STARTING TRAINING")
     print("="*80)
 
-    trainer.train()
+    # RESUME=auto  -> continue from the latest checkpoint in output_dir (e.g. after a Colab disconnect)
+    # RESUME=<path> -> continue from that specific checkpoint folder
+    _resume = os.environ.get("RESUME", "").strip()
+    if _resume.lower() == "auto":
+        from transformers.trainer_utils import get_last_checkpoint
+        _resume = get_last_checkpoint(config.output_dir) if os.path.isdir(config.output_dir) else None
+        print(f"Resuming from: {_resume}" if _resume else "RESUME=auto but no checkpoint found: starting from scratch")
+    elif _resume:
+        print(f"Resuming from: {_resume}")
+    trainer.train(resume_from_checkpoint=_resume or None)
 
 
 
